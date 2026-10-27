@@ -1,0 +1,6 @@
+numpy
+scipy
+cryptography
+python-dotenv
+pyrtlsdr
+PySide6
