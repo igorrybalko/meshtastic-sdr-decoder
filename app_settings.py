@@ -39,6 +39,13 @@ def default_settings() -> dict:
             "peer_node_id": "",
             "peer_public_key": "",
         },
+        "integrations": {
+            "telegram": {
+                "enabled": False,
+                "bot_token": "",
+                "chat_id": "",
+            },
+        },
     }
 
 
@@ -63,6 +70,13 @@ def load_settings() -> dict:
     pki = loaded.get("pki")
     if isinstance(pki, dict):
         settings["pki"].update(pki)
+        
+    integrations = loaded.get("integrations")
+    if isinstance(integrations, dict):
+        telegram = integrations.get("telegram")
+        if isinstance(telegram, dict):
+            settings["integrations"]["telegram"].update(telegram)
+        
     channels = loaded.get("channels")
     if isinstance(channels, list):
         settings["channels"] = [

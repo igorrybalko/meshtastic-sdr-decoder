@@ -14,6 +14,8 @@ from packet_decoder import decode_packet
 from lora_header.extract_header import get_header
 from lora_header.chirp import make_upchirp
 
+from telegram_publisher import TelegramPublisher
+
 
 WINDOW_SIZE = 2_097_152
 OVERLAP = 131_072
@@ -68,6 +70,13 @@ class SDRWorker(QThread):
         
         self.packet_buffer = None
         self.last_window_end = None
+        
+        self.telegram_publisher = TelegramPublisher()
+        if self.telegram_publisher.enabled:
+            print("Telegram publishing enabled (strict PKI text-message policy)")
+        else:
+            print("Telegram publishing disabled in settings or credentials are missing")
+
 
     def stop(self):
         self._stop_requested = True
@@ -204,7 +213,11 @@ class SDRWorker(QThread):
                         print("Packet decoder result:", result)
                         
                         if isinstance(result, dict):
-                             self.packet_decoded.emit(result)
+                            self.packet_decoded.emit(result)
+                                          
+                            # Only verified PKI text messages are queued for Telegram.
+                            self.telegram_publisher.publish(result)
+
 
                         self.status.emit(
                             f"Header decoded: {packet_length} bytes"
@@ -226,4 +239,5 @@ class SDRWorker(QThread):
                     self.last_window_end = None
 
         finally:
+            self.telegram_publisher.close()
             self.status.emit("Stopped")

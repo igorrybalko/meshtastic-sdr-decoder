@@ -9,7 +9,7 @@ from copy import deepcopy
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QDialog, QDialogButtonBox, QFormLayout, QHBoxLayout, QLabel,
-    QLineEdit, QMessageBox, QPushButton, QSpinBox, QTabWidget,
+    QLineEdit, QMessageBox, QPushButton, QCheckBox, QTabWidget,
     QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget,
 )
 
@@ -83,6 +83,33 @@ class SettingsDialog(QDialog):
         warning.setStyleSheet("color: #a66a00;")
         pki_form.addRow(warning)
         tabs.addTab(pki_page, "PKI")
+        
+        # Integrations tab — basic Telegram Bot API settings.
+        integrations_page = QWidget()
+        integrations_layout = QVBoxLayout(integrations_page)
+        telegram_form = QFormLayout()
+        self.telegram_enabled = QCheckBox("Publish decoded messages to Telegram")
+        self.telegram_bot_token = QLineEdit()
+        self.telegram_bot_token.setEchoMode(QLineEdit.EchoMode.Password)
+        self.telegram_bot_token.setPlaceholderText("Token from @BotFather")
+        self.telegram_chat_id = QLineEdit()
+        self.telegram_chat_id.setPlaceholderText("@channel_name or chat ID")
+        telegram_form.addRow("Telegram:", self.telegram_enabled)
+        telegram_form.addRow("Bot token:", self.telegram_bot_token)
+        telegram_form.addRow("Chat ID:", self.telegram_chat_id)
+        integrations_layout.addLayout(telegram_form)
+
+        telegram_warning = QLabel(
+            "The bot must be an administrator of the target channel with "
+            "permission to post messages. The token is saved in the local "
+            "settings.json file as plain text; do not share that file or "
+            "commit it to Git."
+        )
+        telegram_warning.setWordWrap(True)
+        telegram_warning.setStyleSheet("color: #a66a00;")
+        integrations_layout.addWidget(telegram_warning)
+        integrations_layout.addStretch()
+        tabs.addTab(integrations_page, "Integrations")
 
         buttons = QDialogButtonBox(
             QDialogButtonBox.StandardButton.Save
@@ -95,6 +122,13 @@ class SettingsDialog(QDialog):
         self._populate()
 
     def _populate(self):
+        
+        integrations = self._settings.get("integrations", {})
+        telegram = integrations.get("telegram", {}) if isinstance(integrations, dict) else {}
+        self.telegram_enabled.setChecked(bool(telegram.get("enabled", False)))
+        self.telegram_bot_token.setText(str(telegram.get("bot_token", "")))
+        self.telegram_chat_id.setText(str(telegram.get("chat_id", "")))
+        
         pki = self._settings.get("pki", {})
         self.own_node_id.setText(str(pki.get("own_node_id", "")))
         self.private_key.setText(str(pki.get("private_key", "")))
@@ -147,6 +181,12 @@ class SettingsDialog(QDialog):
             "private_key": self.private_key.text().strip(),
             "peer_node_id": self.peer_node_id.text().strip(),
             "peer_public_key": self.peer_public_key.text().strip(),
+        }
+        self._settings.setdefault("integrations", {})
+        self._settings["integrations"]["telegram"] = {
+            "enabled": self.telegram_enabled.isChecked(),
+            "bot_token": self.telegram_bot_token.text().strip(),
+            "chat_id": self.telegram_chat_id.text().strip(),
         }
         super().accept()
 
