@@ -21,8 +21,8 @@ def extract_header(
     bw,
     sf,
     approx_start_seconds: float,
-    margin_before_seconds: float = 0.05,
     margin_after_seconds: float = 5.0,
+    margin_before_seconds: float = 0.05,
 ) -> bytes:
     """Вернуть 16 байт открытого заголовка Meshtastic-пакета.
 
@@ -91,9 +91,14 @@ def extract_header(
     return data_bytes, hdr.payload_length
 
 
-def get_header(samples, bw, sf, start_seconds):
+def get_header(samples, bw, sf, start_seconds, modem_preset=None):
+    
+    margin_after = config.HEADER_MARGIN_AFTER_BY_PRESET.get(
+        modem_preset,
+        config.DEFAULT_HEADER_MARGIN_AFTER,
+    )
 
-    data_bytes, payload_length = extract_header(samples, bw, sf, start_seconds)
+    data_bytes, payload_length = extract_header(samples, bw, sf, start_seconds, margin_after)
     mh = parse_radio_header(data_bytes)
 
     print(f"  to   = !{mh['to']:08x}")

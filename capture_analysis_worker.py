@@ -41,6 +41,7 @@ def analyze_capture(
     ss,
     sample_rate,
     coding_rate,
+    modem_preset,
     progress_callback: Callable[[str], Any] | None = None,
     packet_callback: Callable[[dict], Any] | None = None,
 ) -> list[dict]:
@@ -80,7 +81,7 @@ def analyze_capture(
 
         try:
             mh, packet_length, data_bytes = get_header(
-                samples, bandwidth_hz, sf, start_seconds
+                samples, bandwidth_hz, sf, start_seconds, modem_preset
             )
             payload_start = packet_start + 20 * ss + 8 * ss + HEADER_OFFSET
             result = decode_packet(
@@ -131,6 +132,7 @@ class CaptureAnalysisWorker(QThread):
         spreading_factor, 
         sample_rate,
         coding_rate,
+        modem_preset=None,
     ):
         super().__init__()
         self.capture_path = capture_path
@@ -144,6 +146,7 @@ class CaptureAnalysisWorker(QThread):
             * (self.n)
             / self.bandwidth
         )
+        self.modem_preset = modem_preset
 
     def run(self):
         try:
@@ -155,6 +158,7 @@ class CaptureAnalysisWorker(QThread):
                 ss=self.samples_per_symbol,
                 sample_rate=self.sample_rate,
                 coding_rate=self.coding_rate,
+                modem_preset=self.modem_preset,
                 progress_callback=self.status.emit,
                 packet_callback=self.packet_decoded.emit,
             )

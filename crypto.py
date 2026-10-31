@@ -285,37 +285,43 @@ def parse_node_id(value):
 
 
 def load_pki_peers(value):
-    """Load peer public keys from a JSON string."""
+    """Load and validate peer public keys and node names."""
+
     if not value:
         return {}
 
-    data = json.loads(value)
-
-    if not isinstance(data, dict):
-        raise ValueError(
-            "MESHTASTIC_PKI_PEERS must be a JSON object"
-        )
+    if not isinstance(value, dict):
+        raise ValueError("PKI peers must be a dictionary")
 
     peers = {}
 
-    for node_id, public_key in data.items():
+    for node_id, peer in value.items():
         node_id = parse_node_id(node_id)
+
+        if not isinstance(peer, dict):
+            raise ValueError(
+                f"Invalid peer settings for node {node_id:08X}"
+            )
+
+        public_key = peer.get("public_key", "")
 
         if not isinstance(public_key, str) or not public_key:
             raise ValueError(
-                f"Invalid public key for node {node_id:08X}"
+                f"Missing public key for node {node_id:08X}"
             )
 
-        # Проверяем, что ключ корректно декодируется.
         pub = base64.b64decode(public_key, validate=True)
 
         if len(pub) != 32:
             raise ValueError(
-                f"Public key for {node_id:08X} "
-                "must be 32 bytes"
+                f"Public key for {node_id:08X} must be 32 bytes"
             )
 
-        peers[node_id] = public_key
+        peers[node_id] = {
+            "public_key": public_key,
+            "short_name": str(peer.get("short_name", "")).strip(),
+            "long_name": str(peer.get("long_name", "")).strip(),
+        }
 
     return peers
 
@@ -344,10 +350,12 @@ def derive_packet_pki_key(
     else:
         return None
 
-    public_key = peers.get(peer_id)
+    peer = peers.get(peer_id)
 
-    if public_key is None:
+    if peer is None:
         return None
+
+    public_key = peer["public_key"]
 
     return derive_pki_key(
         private_key_bytes,

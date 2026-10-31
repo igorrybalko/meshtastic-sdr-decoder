@@ -36,6 +36,7 @@ class SDRWorker(QThread):
         bandwidth,
         spreading_factor,
         coding_rate,
+        modem_preset=None,
         block_size=16384,
     ):
         super().__init__()
@@ -48,6 +49,7 @@ class SDRWorker(QThread):
         self.spreading_factor = spreading_factor
         self.coding_rate = coding_rate
         self.n = 2 ** self.spreading_factor
+        self.modem_preset = modem_preset
 
         self._stop_requested = False
         
@@ -183,6 +185,7 @@ class SDRWorker(QThread):
                             self.bandwidth,
                             self.spreading_factor,
                             0.0,
+                            modem_preset=self.modem_preset
                         )
 
                         print("Header decoded:")

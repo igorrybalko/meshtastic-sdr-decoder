@@ -36,8 +36,7 @@ def default_settings() -> dict:
         "pki": {
             "own_node_id": "",
             "private_key": "",
-            "peer_node_id": "",
-            "peer_public_key": "",
+            "peers": {},
         },
         "integrations": {
             "telegram": {

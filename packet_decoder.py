@@ -1,8 +1,3 @@
-import os
-import base64
-import binascii
-from types import SimpleNamespace
-
 import numpy as np
 
 from config import BROADCAST_TO, NODE_ROLES
@@ -66,21 +61,30 @@ def load_channels_from_settings() -> dict:
 
 channels = load_channels_from_settings()
 
-print(channels)
 
-priv_text = os.environ.get("MESHTASTIC_SENDER_PRIVATE_KEY")
-priv = load_private_key(priv_text) if priv_text else None
+def load_pki_settings():
+    """Load local node PKI credentials and peers from application settings."""
+    settings = load_settings()
+    pki = settings.get("pki", {})
 
-own_node_id_text = os.environ.get("MESHTASTIC_PKI_NODE_ID")
-own_node_id = (
-    parse_node_id(own_node_id_text)
-    if own_node_id_text
-    else None
-)
+    own_node_id_text = pki.get("own_node_id", "").strip()
+    private_key_text = pki.get("private_key", "").strip()
 
-peers = load_pki_peers(
-    os.environ.get("MESHTASTIC_PKI_PEERS")
-)
+    own_node_id = (
+        parse_node_id(own_node_id_text)
+        if own_node_id_text
+        else None
+    )
+
+    priv = (
+        load_private_key(private_key_text)
+        if private_key_text
+        else None
+    )
+
+    peers = load_pki_peers(pki.get("peers", {}))
+
+    return priv, own_node_id, peers
 
 
 def initial_nibbles_from_to(to, white):
@@ -563,6 +567,32 @@ def process_pki(
         ),
         **decoded_data,
     }
+    
+    
+def correct_node_id(value, own_node_id):
+    """
+    Replace a node ID with own_node_id if exactly one
+    hexadecimal digit differs.
+    """
+    if own_node_id is None:
+        return value
+
+    diff = value ^ own_node_id
+
+    different_digits = sum(
+        1
+        for i in range(8)
+        if ((diff >> (i * 4)) & 0xF) != 0
+    )
+
+    if different_digits == 1:
+        print(
+            f"Correcting node ID: "
+            f"!{value:08X} -> !{own_node_id:08X}"
+        )
+        return own_node_id
+
+    return value
 
 
 
@@ -590,6 +620,20 @@ def decode_packet(
     if broadcast_result is not None:
         return broadcast_result
     
+    
+    priv, own_node_id, peers = load_pki_settings()
+    
+    mh = dict(mh)
+    
+    mh["from"] = correct_node_id(
+        mh["from"],
+        own_node_id
+    )
+
+    mh["to"] = correct_node_id(
+        mh["to"],
+        own_node_id
+    )
 
     # Чужой private packet: содержимое недоступно для этого декодера
     if (

@@ -13,6 +13,8 @@ from PySide6.QtWidgets import (
     QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget,
 )
 
+from crypto import load_pki_peers
+
 
 class SettingsDialog(QDialog):
     def __init__(self, settings: dict, parent=None):
@@ -58,32 +60,78 @@ class SettingsDialog(QDialog):
         channels_layout.addLayout(channel_buttons)
         tabs.addTab(channels_page, "Channels")
 
-        # PKI tab — one local node and one peer for the current implementation.
+        # PKI tab
         pki_page = QWidget()
-        pki_form = QFormLayout(pki_page)
+        pki_layout = QVBoxLayout(pki_page)
+
+        # Собственные параметры узла
+        pki_form = QFormLayout()
+
         self.own_node_id = QLineEdit()
-        self.own_node_id.setPlaceholderText("e.g. !xxxxxxxx")
+        self.own_node_id.setPlaceholderText("e.g. xxxxxxxx")
+
         self.private_key = QLineEdit()
         self.private_key.setPlaceholderText("Base64 or 64 hexadecimal characters")
         self.private_key.setEchoMode(QLineEdit.EchoMode.Password)
-        self.peer_node_id = QLineEdit()
-        self.peer_node_id.setPlaceholderText("e.g. !xxxxxxxx")
-        self.peer_public_key = QLineEdit()
-        self.peer_public_key.setPlaceholderText("Base64 X25519 public key")
+
         pki_form.addRow("My node ID:", self.own_node_id)
         pki_form.addRow("My private key:", self.private_key)
-        pki_form.addRow("Peer node ID:", self.peer_node_id)
-        pki_form.addRow("Peer public key:", self.peer_public_key)
+
+        pki_layout.addLayout(pki_form)
+
+        # Таблица соседних узлов
+        pki_layout.addWidget(QLabel("Peer nodes:"))
+
+        self.peers_table = QTableWidget(0, 4)
+
+        self.peers_table.setHorizontalHeaderLabels([
+            "Node ID",
+            "Public key",
+            "Short name",
+            "Long name",
+        ])
+
+        self.peers_table.horizontalHeader().setStretchLastSection(True)
+
+        self.peers_table.setSelectionBehavior(
+            QTableWidget.SelectionBehavior.SelectRows
+        )
+
+        self.peers_table.setEditTriggers(
+            QTableWidget.EditTrigger.DoubleClicked
+            | QTableWidget.EditTrigger.EditKeyPressed
+            | QTableWidget.EditTrigger.SelectedClicked
+        )
+
+        pki_layout.addWidget(self.peers_table)
+
+        # Кнопки управления узлами
+        peer_buttons = QHBoxLayout()
+
+        add_peer = QPushButton("Add node")
+        remove_peer = QPushButton("Remove selected")
+
+        add_peer.clicked.connect(self.add_peer)
+        remove_peer.clicked.connect(self.remove_peer)
+
+        peer_buttons.addWidget(add_peer)
+        peer_buttons.addWidget(remove_peer)
+        peer_buttons.addStretch()
+
+        pki_layout.addLayout(peer_buttons)
+
+        # Предупреждение
         warning = QLabel(
             "Note: these fields are saved locally in settings.json as plain text. "
-            "Anyone with access to your Windows account files may be able to read them. "
-            "They are not used by the decoder yet."
+            "Anyone with access to your Windows account files may be able to read them."
         )
         warning.setWordWrap(True)
         warning.setStyleSheet("color: #a66a00;")
-        pki_form.addRow(warning)
+
+        pki_layout.addWidget(warning)
+
         tabs.addTab(pki_page, "PKI")
-        
+
         # Integrations tab — basic Telegram Bot API settings.
         integrations_page = QWidget()
         integrations_layout = QVBoxLayout(integrations_page)
@@ -120,6 +168,51 @@ class SettingsDialog(QDialog):
         root.addWidget(buttons)
 
         self._populate()
+        
+        
+    def _append_peer(self, node_id="", peer=None):
+        peer = peer or {}
+
+        row = self.peers_table.rowCount()
+        self.peers_table.insertRow(row)
+
+        values = [
+            node_id,
+            peer.get("public_key", ""),
+            peer.get("short_name", ""),
+            peer.get("long_name", ""),
+        ]
+
+        for column, value in enumerate(values):
+            self.peers_table.setItem(
+                row,
+                column,
+                QTableWidgetItem(str(value))
+            )
+            
+            
+    def add_peer(self):
+        self._append_peer()
+
+        row = self.peers_table.rowCount() - 1
+        self.peers_table.setCurrentCell(row, 0)
+        self.peers_table.editItem(
+            self.peers_table.item(row, 0)
+        )
+
+
+    def remove_peer(self):
+        rows = sorted(
+            {
+                index.row()
+                for index in self.peers_table.selectedIndexes()
+            },
+            reverse=True,
+        )
+
+        for row in rows:
+            self.peers_table.removeRow(row)
+            
 
     def _populate(self):
         
@@ -132,10 +225,13 @@ class SettingsDialog(QDialog):
         pki = self._settings.get("pki", {})
         self.own_node_id.setText(str(pki.get("own_node_id", "")))
         self.private_key.setText(str(pki.get("private_key", "")))
-        self.peer_node_id.setText(str(pki.get("peer_node_id", "")))
-        self.peer_public_key.setText(str(pki.get("peer_public_key", "")))
+        
+        for node_id, peer in pki.get("peers", {}).items():
+            self._append_peer(node_id, peer)
+        
+        
         for channel in self._settings.get("channels", []):
-            self._append_channel(channel)
+            self._append_channel(channel)     
 
     def _append_channel(self, channel=None):
         channel = channel or {"index": 0, "name": "", "psk": ""}
@@ -174,13 +270,70 @@ class SettingsDialog(QDialog):
         except ValueError as exc:
             QMessageBox.warning(self, "Invalid channel", str(exc))
             return
+        
+        peers = {}
+
+        try:
+            for row in range(self.peers_table.rowCount()):
+                node_id_item = self.peers_table.item(row, 0)
+                public_key_item = self.peers_table.item(row, 1)
+                short_name_item = self.peers_table.item(row, 2)
+                long_name_item = self.peers_table.item(row, 3)
+
+                node_id = (
+                    node_id_item.text().strip().lstrip("!")
+                    if node_id_item else ""
+                )
+
+                public_key = (
+                    public_key_item.text().strip()
+                    if public_key_item else ""
+                )
+
+                short_name = (
+                    short_name_item.text().strip()
+                    if short_name_item else ""
+                )
+
+                long_name = (
+                    long_name_item.text().strip()
+                    if long_name_item else ""
+                )
+
+                # Полностью пустая строка таблицы пропускается.
+                if not any([node_id, public_key, short_name, long_name]):
+                    continue
+
+                if not node_id or not public_key:
+                    raise ValueError(
+                        f"Node ID and public key are required in row {row + 1}"
+                    )
+
+                node_id = f"{int(node_id, 16):08X}"
+
+                if node_id in peers:
+                    raise ValueError(
+                        f"Duplicate Node ID: {node_id}"
+                    )
+
+                peers[node_id] = {
+                    "public_key": public_key,
+                    "short_name": short_name,
+                    "long_name": long_name,
+                }
+
+            # Проверяем корректность всех публичных ключей.
+            load_pki_peers(peers)
+
+        except (ValueError, TypeError) as exc:
+            QMessageBox.warning(self, "Invalid PKI node", str(exc))
+            return
 
         self._settings["channels"] = channels
         self._settings["pki"] = {
             "own_node_id": self.own_node_id.text().strip(),
             "private_key": self.private_key.text().strip(),
-            "peer_node_id": self.peer_node_id.text().strip(),
-            "peer_public_key": self.peer_public_key.text().strip(),
+            "peers": peers,
         }
         self._settings.setdefault("integrations", {})
         self._settings["integrations"]["telegram"] = {
